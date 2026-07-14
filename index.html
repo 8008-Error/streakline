@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b111c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Streakline">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Streakline — Daily Habit Ledger</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: #0b111c;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #eef1f7;
+  }
+  #app { min-height: 100%; width: 100%; padding: 20px; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  .loading-wrap { background: #0b111c; min-height: 300px; display: flex; align-items: center; justify-content: center; color: #7c8aa3; font-size: 13px; }
+  .loading-text { letter-spacing: 0.05em; }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .flame { font-size: 26px; line-height: 1; }
+  .brand-title { font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 700; letter-spacing: 0.01em; color: #f5f1e8; }
+  .brand-sub { font-size: 10px; letter-spacing: 0.14em; color: #7c8aa3; font-weight: 600; margin-top: 2px; }
+
+  .month-nav { display: flex; align-items: center; gap: 4px; background: #121a29; border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 6px 6px; }
+  .nav-btn, .nav-btn-small { background: transparent; border: none; color: #f2a154; cursor: pointer; line-height: 1; }
+  .nav-btn { font-size: 18px; width: 28px; height: 28px; border-radius: 999px; }
+  .nav-btn-small { font-size: 15px; width: 22px; height: 22px; border-radius: 999px; }
+  .month-label { font-family: Georgia, serif; font-size: 15px; padding: 0 10px; color: #f5f1e8; min-width: 130px; text-align: center; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    grid-template-areas:
+      "chart stats"
+      "habits habits"
+      "top notes";
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr; grid-template-areas: "chart" "stats" "habits" "top" "notes"; }
+    body { -webkit-tap-highlight-color: transparent; }
+    #app { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    .day-cell { width: 30px; height: 30px; }
+    .th-day { min-width: 34px; }
+    .brand-title { font-size: 21px; }
+    .month-label { font-size: 14px; min-width: 100px; }
+    .add-row { flex-wrap: wrap; }
+    .goal-input { width: 72px; }
+    .input, .goal-input, .add-btn { font-size: 16px; padding: 11px 12px; } /* 16px avoids iOS auto-zoom on focus */
+    .note-area { font-size: 16px; }
+  }
+
+  .card { background: #121a29; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 18px; min-width: 0; }
+  .card-label { font-size: 11px; letter-spacing: 0.12em; color: #8b98b3; font-weight: 700; margin-bottom: 4px; }
+  .chart-sub { font-size: 11px; color: #5f6d87; margin-bottom: 14px; }
+
+  .chart-wrap { display: flex; gap: 10px; }
+  .y-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: #5f6d87; height: 150px; padding-bottom: 20px; }
+  .bar-row { display: flex; flex: 1; justify-content: space-between; align-items: flex-end; gap: 8px; }
+  .bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 0; }
+  .bar-track { height: 150px; width: 100%; max-width: 34px; display: flex; align-items: flex-end; background: rgba(255,255,255,0.03); border-radius: 6px; overflow: hidden; }
+  .bar { width: 100%; background: linear-gradient(180deg, #f2a154 0%, #c9822f 100%); border-radius: 4px 4px 0 0; transition: height 0.3s ease; }
+  .bar-val { font-size: 10px; color: #c9822f; margin-top: 6px; font-weight: 600; }
+  .bar-label { font-size: 11px; color: #8b98b3; margin-top: 2px; }
+
+  .ring-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .ring-pct { font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #f5f1e8; }
+  .ring-sub { font-size: 11px; color: #7c8aa3; }
+  .stat-line { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); font-size: 13px; }
+  .stat-label { color: #8b98b3; }
+  .stat-value { color: #eef1f7; font-weight: 600; }
+
+  .empty-state { font-size: 13px; color: #5f6d87; padding: 20px 0; text-align: center; }
+
+  .table-scroll { overflow-x: auto; overflow-y: hidden; border-radius: 8px; max-width: 100%; }
+  table.habits-table { border-collapse: separate; border-spacing: 0 4px; width: max-content; min-width: 100%; }
+  .th-habit { position: sticky; left: 0; background: #121a29; text-align: left; font-size: 11px; color: #7c8aa3; font-weight: 600; padding: 0 10px 6px 4px; min-width: 160px; z-index: 2; }
+  .th-small { font-size: 11px; color: #7c8aa3; font-weight: 600; padding: 0 10px 6px; min-width: 50px; }
+  .th-day { font-size: 11px; font-weight: 600; padding: 0 4px 6px; min-width: 26px; text-align: center; color: #7c8aa3; }
+  .th-day.today { color: #f2a154; }
+  .td-habit { position: sticky; left: 0; background: #121a29; padding: 4px 10px 4px 4px; min-width: 160px; z-index: 1; }
+  .habit-name-row { display: flex; align-items: center; gap: 6px; }
+  .habit-name { font-size: 13px; color: #eef1f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  .remove-btn { background: transparent; border: none; color: #5f6d87; font-size: 14px; cursor: pointer; line-height: 1; padding: 2px; }
+  .td-streak { font-size: 12px; color: #c9822f; text-align: center; font-weight: 600; }
+  .td-cell { padding: 2px; }
+  .day-cell { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.08); background: #1a2436; cursor: pointer; padding: 0; display: block; }
+  .day-cell.done { background: linear-gradient(135deg, #f2a154, #c9822f); border: 1px solid #f2a154; }
+  .day-cell.future { opacity: 0.35; cursor: not-allowed; }
+
+  .add-row { display: flex; gap: 8px; margin-top: 14px; }
+  .input, .goal-input { background: #0e1521; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #eef1f7; font-size: 13px; outline: none; font-family: inherit; }
+  .input { flex: 1; padding: 9px 12px; min-width: 0; }
+  .goal-input { width: 64px; padding: 9px 8px; }
+  .add-btn { background: linear-gradient(135deg, #f2a154, #c9822f); border: none; border-radius: 8px; padding: 9px 18px; color: #1a1206; font-weight: 700; font-size: 13px; cursor: pointer; }
+
+  .top-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .top-row { display: flex; align-items: center; gap: 8px; }
+  .top-rank { font-size: 11px; color: #5f6d87; width: 14px; }
+  .top-name { font-size: 12px; color: #eef1f7; width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+  .top-bar-fill { height: 100%; background: linear-gradient(90deg, #f2a154, #c9822f); border-radius: 3px; }
+  .top-pct { font-size: 11px; color: #8b98b3; width: 32px; text-align: right; }
+
+  .notes-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .note-nav { display: flex; align-items: center; gap: 6px; background: #0e1521; border-radius: 999px; padding: 4px 8px; border: 1px solid rgba(255,255,255,0.06); }
+  .note-date-label { font-size: 12px; color: #eef1f7; min-width: 110px; text-align: center; display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .today-tag { font-size: 9px; color: #c9822f; background: rgba(242,161,84,0.12); padding: 2px 6px; border-radius: 999px; font-weight: 700; }
+  .note-area { width: 100%; min-height: 120px; background: #0e1521; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; color: #eef1f7; font-size: 13px; outline: none; resize: vertical; box-sizing: border-box; font-family: inherit; line-height: 1.5; }
+  .note-footer { font-size: 10px; color: #5f6d87; margin-top: 6px; height: 12px; }
+
+  ::placeholder { color: #5f6d87; }
+
+  .storage-warning { background: rgba(242,161,84,0.1); border: 1px solid rgba(242,161,84,0.3); color: #f2a154; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="container" id="container"></div></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- storage: localStorage so data survives closing/reloading the browser ----------
+  const STORAGE_PREFIX = "streakline:";
+  const memoryStore = {}; // last-resort fallback if localStorage itself throws (e.g. private mode edge cases)
+  let localStorageOk = true;
+  try {
+    const t = "__streakline_test__";
+    window.localStorage.setItem(t, "1");
+    window.localStorage.removeItem(t);
+  } catch (e) {
+    localStorageOk = false;
+  }
+
+  const storage = {
+    async get(key) {
+      if (localStorageOk) {
+        const v = window.localStorage.getItem(STORAGE_PREFIX + key);
+        return v === null ? null : { key, value: v };
+      }
+      return Object.prototype.hasOwnProperty.call(memoryStore, key) ? { key, value: memoryStore[key] } : null;
+    },
+    async set(key, value) {
+      if (localStorageOk) {
+        window.localStorage.setItem(STORAGE_PREFIX + key, value);
+      } else {
+        memoryStore[key] = value;
+      }
+      return { key, value };
+    },
+  };
+
+  // ---------- constants ----------
+  const WEEKDAYS = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"]; // week starts Saturday
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function dateKey(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
+  function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+  function weekdayIndex(jsDay) { return (jsDay + 1) % 7; }
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // ---------- state ----------
+  const today = new Date();
+  const state = {
+    year: today.getFullYear(),
+    month: today.getMonth(),
+    habits: null,      // null = loading
+    notes: {},
+    selectedNoteDay: today.getDate(),
+    noteDraft: "",
+    saving: false,
+    loaded: false,
+  };
+  let noteTimer = null;
+
+  function monthKey() { return `${state.year}-${pad(state.month + 1)}`; }
+  function todayKey() { return dateKey(today.getFullYear(), today.getMonth(), today.getDate()); }
+  function isCurrentMonth() { return state.year === today.getFullYear() && state.month === today.getMonth(); }
+  function numDays() { return daysInMonth(state.year, state.month); }
+
+  // ---------- load ----------
+  async function loadMonth() {
+    state.loaded = false;
+    render();
+    try {
+      const h = await storage.get("habits");
+      state.habits = h ? JSON.parse(h.value) : [];
+    } catch (e) {
+      state.habits = [];
+    }
+    try {
+      const n = await storage.get(`notes:${monthKey()}`);
+      state.notes = n ? JSON.parse(n.value) : {};
+    } catch (e) {
+      state.notes = {};
+    }
+    state.noteDraft = state.notes[dateKey(state.year, state.month, state.selectedNoteDay)] || "";
+    state.loaded = true;
+    render();
+  }
+
+  // ---------- persistence ----------
+  async function persistHabits(next) {
+    state.habits = next;
+    state.saving = true;
+    render();
+    try {
+      await storage.set("habits", JSON.stringify(next));
+    } catch (e) {
+      console.error("save habits failed", e);
+    } finally {
+      state.saving = false;
+      render();
+    }
+  }
+
+  async function persistNotes(next, mKey) {
+    state.notes = next;
+    try {
+      await storage.set(`notes:${mKey}`, JSON.stringify(next));
+    } catch (e) {
+      console.error("save notes failed", e);
+    }
+    updateNoteFooter();
+  }
+
+  // ---------- habit actions ----------
+  function addHabit() {
+    const nameInput = document.getElementById("newHabitName");
+    const goalInput = document.getElementById("newHabitGoal");
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const goalRaw = goalInput.value.trim();
+    const goal = goalRaw ? parseInt(goalRaw, 10) : numDays();
+    const next = [...(state.habits || []), { id: uid(), name, goal: goal || numDays(), completions: {} }];
+    nameInput.value = "";
+    goalInput.value = "";
+    persistHabits(next);
+  }
+
+  function removeHabit(id) {
+    persistHabits((state.habits || []).filter(h => h.id !== id));
+  }
+
+  function toggleDay(habitId, day) {
+    const k = dateKey(state.year, state.month, day);
+    const next = (state.habits || []).map(h => {
+      if (h.id !== habitId) return h;
+      const completions = { ...h.completions };
+      if (completions[k]) delete completions[k];
+      else completions[k] = true;
+      return { ...h, completions };
+    });
+    persistHabits(next);
+  }
+
+  function changeMonth(delta) {
+    let m = state.month + delta, y = state.year;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    state.month = m; state.year = y;
+    state.selectedNoteDay = 1;
+    loadMonth();
+  }
+
+  // ---------- note actions ----------
+  function updateNoteDraft(val) {
+    state.noteDraft = val;
+    if (noteTimer) clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      const k = dateKey(state.year, state.month, state.selectedNoteDay);
+      const next = { ...state.notes };
+      if (val.trim()) next[k] = val;
+      else delete next[k];
+      persistNotes(next, monthKey());
+    }, 500);
+  }
+
+  function shiftNoteDay(delta) {
+    let d = state.selectedNoteDay + delta;
+    if (d < 1) {
+      changeMonth(-1);
+      d = 1;
+    } else if (d > numDays()) {
+      changeMonth(1);
+      d = 1;
+    }
+    state.selectedNoteDay = d;
+    state.noteDraft = state.notes[dateKey(state.year, state.month, state.selectedNoteDay)] || "";
+    render();
+  }
+
+  // ---------- derived stats ----------
+  function dayList() { return Array.from({ length: numDays() }, (_, i) => i + 1); }
+
+  function activeDays() { return isCurrentMonth() ? today.getDate() : numDays(); }
+
+  function weekdayStats() {
+    const buckets = WEEKDAYS.map(() => ({ done: 0, total: 0 }));
+    const hs = state.habits || [];
+    const ad = activeDays();
+    for (let d = 1; d <= ad; d++) {
+      const jsDay = new Date(state.year, state.month, d).getDay();
+      const wIdx = weekdayIndex(jsDay);
+      const k = dateKey(state.year, state.month, d);
+      hs.forEach(h => {
+        buckets[wIdx].total += 1;
+        if (h.completions[k]) buckets[wIdx].done += 1;
+      });
+    }
+    return buckets.map(b => (b.total ? Math.round((b.done / b.total) * 100) : 0));
+  }
+
+  function overallStats() {
+    const hs = state.habits || [];
+    let completed = 0, total = 0;
+    const ad = activeDays();
+    hs.forEach(h => {
+      for (let d = 1; d <= ad; d++) {
+        total += 1;
+        if (h.completions[dateKey(state.year, state.month, d)]) completed += 1;
+      }
+    });
+    const pct = total ? Math.round((completed / total) * 100) : 0;
+    return { completed, remaining: total - completed, pct, total };
+  }
+
+  function bestStreak() {
+    const hs = state.habits || [];
+    let best = 0;
+    const nd = numDays();
+    hs.forEach(h => {
+      let cur = 0, max = 0;
+      for (let d = 1; d <= nd; d++) {
+        const k = dateKey(state.year, state.month, d);
+        if (h.completions[k]) { cur += 1; max = Math.max(max, cur); }
+        else cur = 0;
+      }
+      best = Math.max(best, max);
+    });
+    return best;
+  }
+
+  function topHabits() {
+    const hs = state.habits || [];
+    const ad = activeDays();
+    return hs
+      .map(h => {
+        let done = 0;
+        for (let d = 1; d <= ad; d++) if (h.completions[dateKey(state.year, state.month, d)]) done += 1;
+        const pct = ad ? Math.round((done / ad) * 100) : 0;
+        return { name: h.name, pct, done };
+      })
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 5);
+  }
+
+  function streakFor(h) {
+    let cur = 0;
+    for (let d = (isCurrentMonth() ? today.getDate() : numDays()); d >= 1; d--) {
+      const k = dateKey(state.year, state.month, d);
+      if (h.completions[k]) cur += 1;
+      else break;
+    }
+    return cur;
+  }
+
+  // ---------- rendering ----------
+  function ringSvg(pct) {
+    const r = 30, c = 2 * Math.PI * r;
+    const offset = c - (pct / 100) * c;
+    return `
+      <svg width="76" height="76" viewBox="0 0 76 76">
+        <circle cx="38" cy="38" r="${r}" fill="none" stroke="#1c2740" stroke-width="7" />
+        <circle cx="38" cy="38" r="${r}" fill="none" stroke="url(#ringGrad)" stroke-width="7" stroke-linecap="round"
+          stroke-dasharray="${c}" stroke-dashoffset="${offset}" transform="rotate(-90 38 38)" />
+        <defs>
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#f2a154" />
+            <stop offset="100%" stop-color="#c9822f" />
+          </linearGradient>
+        </defs>
+      </svg>`;
+  }
+
+  function statLine(label, value) {
+    return `<div class="stat-line"><span class="stat-label">${escapeHtml(label)}</span><span class="stat-value">${escapeHtml(value)}</span></div>`;
+  }
+
+  function render() {
+    const container = document.getElementById("container");
+
+    if (!state.loaded) {
+      container.innerHTML = `<div class="loading-wrap"><div class="loading-text">loading ledger…</div></div>`;
+      return;
+    }
+
+    const wStats = weekdayStats();
+    const oStats = overallStats();
+    const best = bestStreak();
+    const top = topHabits();
+    const days = dayList();
+    const habits = state.habits || [];
+    const tKey = todayKey();
+    const curMonth = isCurrentMonth();
+
+    // header
+    const headerHtml = `
+      <div class="header">
+        <div class="brand">
+          <span class="flame">🔥</span>
+          <div>
+            <div class="brand-title">Streakline</div>
+            <div class="brand-sub">DAILY HABIT LEDGER</div>
+          </div>
+        </div>
+        <div class="month-nav">
+          <button class="nav-btn" onclick="App.changeMonth(-1)" aria-label="Previous month">‹</button>
+          <div class="month-label">${MONTH_NAMES[state.month]} ${state.year}</div>
+          <button class="nav-btn" onclick="App.changeMonth(1)" aria-label="Next month">›</button>
+        </div>
+      </div>
+      ${!localStorageOk ? `<div class="storage-warning">Your browser is blocking local storage, so entries won't be saved after you close this page. Try a normal (non-private) browser window.</div>` : ""}`;
+
+    // weekly chart
+    const barsHtml = WEEKDAYS.map((wd, i) => `
+      <div class="bar-col">
+        <div class="bar-track">
+          <div class="bar" style="height:${Math.max((wStats[i] / 100) * 100, wStats[i] > 0 ? 4 : 0)}%" title="${wStats[i]}%"></div>
+        </div>
+        <div class="bar-val">${wStats[i]}%</div>
+        <div class="bar-label">${wd}</div>
+      </div>`).join("");
+
+    const chartHtml = `
+      <div class="card" style="grid-area: chart;">
+        <div class="card-label">WEEKLY RHYTHM</div>
+        <div class="chart-sub">avg. completion % by day of week</div>
+        <div class="chart-wrap">
+          <div class="y-axis"><span>100%</span><span>50%</span><span>0%</span></div>
+          <div class="bar-row">${barsHtml}</div>
+        </div>
+      </div>`;
+
+    // overall stats
+    const statsHtml = `
+      <div class="card" style="grid-area: stats;">
+        <div class="card-label">OVERALL STATS</div>
+        <div class="ring-row">
+          ${ringSvg(oStats.pct)}
+          <div>
+            <div class="ring-pct">${oStats.pct}%</div>
+            <div class="ring-sub">of month's goals met</div>
+          </div>
+        </div>
+        ${statLine("Completed", oStats.completed)}
+        ${statLine("Remaining", oStats.remaining)}
+        ${statLine("Best streak", `${best} days`)}
+      </div>`;
+
+    // habits table
+    let habitsBodyHtml;
+    if (habits.length === 0) {
+      habitsBodyHtml = `<div class="empty-state">No habits yet — add your first one below.</div>`;
+    } else {
+      const theadDays = days.map(d => `<th class="th-day${(curMonth && d === today.getDate()) ? " today" : ""}">${d}</th>`).join("");
+      const rows = habits.map(h => {
+        const streak = streakFor(h);
+        const cells = days.map(d => {
+          const k = dateKey(state.year, state.month, d);
+          const done = !!h.completions[k];
+          const isFuture = curMonth && d > today.getDate();
+          return `<td class="td-cell">
+            <button class="day-cell${done ? " done" : ""}${isFuture ? " future" : ""}"
+              ${isFuture ? "disabled" : ""}
+              onclick="App.toggleDay('${h.id}', ${d})"
+              aria-label="${escapeHtml(h.name)} day ${d} ${done ? "completed" : "not completed"}"></button>
+          </td>`;
+        }).join("");
+        return `<tr>
+          <td class="td-habit">
+            <div class="habit-name-row">
+              <span class="habit-name" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+              <button class="remove-btn" onclick="App.removeHabit('${h.id}')" aria-label="Remove habit">×</button>
+            </div>
+          </td>
+          <td class="td-streak">${streak > 0 ? streak : "—"}</td>
+          ${cells}
+        </tr>`;
+      }).join("");
+
+      habitsBodyHtml = `
+        <div class="table-scroll">
+          <table class="habits-table">
+            <thead>
+              <tr>
+                <th class="th-habit">Habit</th>
+                <th class="th-small">Streak</th>
+                ${theadDays}
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const habitsHtml = `
+      <div class="card" style="grid-area: habits; overflow: hidden;">
+        <div class="card-label">MY HABITS</div>
+        ${habitsBodyHtml}
+        <div class="add-row">
+          <input class="input" id="newHabitName" placeholder="New habit, e.g. Read 10 pages" />
+          <input class="goal-input" id="newHabitGoal" placeholder="Goal" />
+          <button class="add-btn" onclick="App.addHabit()">Add</button>
+        </div>
+      </div>`;
+
+    // top habits
+    let topBodyHtml;
+    if (top.length === 0) {
+      topBodyHtml = `<div class="empty-state">Add habits to see rankings.</div>`;
+    } else {
+      topBodyHtml = `<div class="top-list">${top.map((t, i) => `
+        <div class="top-row">
+          <span class="top-rank">${i + 1}</span>
+          <span class="top-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
+          <div class="top-bar-track"><div class="top-bar-fill" style="width:${t.pct}%"></div></div>
+          <span class="top-pct">${t.pct}%</span>
+        </div>`).join("")}</div>`;
+    }
+
+    const topHtml = `
+      <div class="card" style="grid-area: top;">
+        <div class="card-label">TOP HABITS</div>
+        ${topBodyHtml}
+      </div>`;
+
+    // notes
+    const noteKeyToday = dateKey(state.year, state.month, state.selectedNoteDay) === tKey;
+    const notesHtml = `
+      <div class="card" style="grid-area: notes;">
+        <div class="notes-header">
+          <div class="card-label">DAILY NOTE</div>
+          <div class="note-nav">
+            <button class="nav-btn-small" onclick="App.shiftNoteDay(-1)" aria-label="Previous day">‹</button>
+            <div class="note-date-label">
+              ${MONTH_NAMES[state.month].slice(0, 3)} ${state.selectedNoteDay}, ${state.year}
+              ${noteKeyToday ? '<span class="today-tag">today</span>' : ""}
+            </div>
+            <button class="nav-btn-small" onclick="App.shiftNoteDay(1)" aria-label="Next day">›</button>
+          </div>
+        </div>
+        <textarea class="note-area" id="noteArea" placeholder="What happened today? Reflections, blockers, wins…">${escapeHtml(state.noteDraft)}</textarea>
+        <div class="note-footer" id="noteFooter">${state.saving ? "saving…" : " "}</div>
+      </div>`;
+
+    container.innerHTML = `
+      ${headerHtml}
+      <div class="grid">
+        ${chartHtml}
+        ${statsHtml}
+        ${habitsHtml}
+        ${topHtml}
+        ${notesHtml}
+      </div>`;
+
+    // wire up inputs that shouldn't trigger a full re-render on every keystroke
+    const goalInput = document.getElementById("newHabitGoal");
+    if (goalInput) {
+      goalInput.addEventListener("input", e => {
+        e.target.value = e.target.value.replace(/[^0-9]/g, "");
+      });
+    }
+    const nameInput = document.getElementById("newHabitName");
+    if (nameInput) {
+      nameInput.addEventListener("keydown", e => { if (e.key === "Enter") App.addHabit(); });
+    }
+    if (goalInput) {
+      goalInput.addEventListener("keydown", e => { if (e.key === "Enter") App.addHabit(); });
+    }
+    const noteArea = document.getElementById("noteArea");
+    if (noteArea) {
+      noteArea.addEventListener("input", e => updateNoteDraft(e.target.value));
+    }
+  }
+
+  function updateNoteFooter() {
+    const el = document.getElementById("noteFooter");
+    if (el) el.textContent = state.saving ? "saving…" : " ";
+  }
+
+  // ---------- public API for inline handlers ----------
+  window.App = {
+    changeMonth,
+    addHabit,
+    removeHabit,
+    toggleDay,
+    shiftNoteDay,
+  };
+
+  loadMonth();
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").catch(() => {
+        // offline caching just won't be available; app still works online
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
