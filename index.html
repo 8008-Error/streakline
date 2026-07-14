@@ -56,8 +56,7 @@
     .brand-title { font-size: 21px; }
     .month-label { font-size: 14px; min-width: 100px; }
     .add-row { flex-wrap: wrap; }
-    .goal-input { width: 72px; }
-    .input, .goal-input, .add-btn { font-size: 16px; padding: 11px 12px; } /* 16px avoids iOS auto-zoom on focus */
+    .input, .add-btn { font-size: 16px; padding: 11px 12px; } /* 16px avoids iOS auto-zoom on focus */
     .note-area { font-size: 16px; }
   }
 
@@ -100,18 +99,13 @@
   .day-cell.future { opacity: 0.35; cursor: not-allowed; }
 
   .add-row { display: flex; gap: 8px; margin-top: 14px; }
-  .input, .goal-input { background: #0e1521; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #eef1f7; font-size: 13px; outline: none; font-family: inherit; }
-  .input { flex: 1; padding: 9px 12px; min-width: 0; }
-  .goal-input { width: 64px; padding: 9px 8px; }
+  .input { background: #0e1521; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #eef1f7; font-size: 13px; outline: none; font-family: inherit; flex: 1; padding: 9px 12px; min-width: 0; }
   .add-btn { background: linear-gradient(135deg, #f2a154, #c9822f); border: none; border-radius: 8px; padding: 9px 18px; color: #1a1206; font-weight: 700; font-size: 13px; cursor: pointer; }
 
-  .top-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .top-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   .top-row { display: flex; align-items: center; gap: 8px; }
   .top-rank { font-size: 11px; color: #5f6d87; width: 14px; }
-  .top-name { font-size: 12px; color: #eef1f7; width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .top-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
-  .top-bar-fill { height: 100%; background: linear-gradient(90deg, #f2a154, #c9822f); border-radius: 3px; }
-  .top-pct { font-size: 11px; color: #8b98b3; width: 32px; text-align: right; }
+  .top-name { font-size: 13px; color: #eef1f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .notes-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
   .note-nav { display: flex; align-items: center; gap: 6px; background: #0e1521; border-radius: 999px; padding: 4px 8px; border: 1px solid rgba(255,255,255,0.06); }
@@ -181,6 +175,7 @@
     year: today.getFullYear(),
     month: today.getMonth(),
     habits: null,      // null = loading
+    priorityList: [],
     notes: {},
     selectedNoteDay: today.getDate(),
     noteDraft: "",
@@ -210,6 +205,7 @@
     } catch (e) {
       state.notes = {};
     }
+    await loadPriorityList();
     state.noteDraft = state.notes[dateKey(state.year, state.month, state.selectedNoteDay)] || "";
     state.loaded = true;
     render();
@@ -243,14 +239,10 @@
   // ---------- habit actions ----------
   function addHabit() {
     const nameInput = document.getElementById("newHabitName");
-    const goalInput = document.getElementById("newHabitGoal");
     const name = nameInput.value.trim();
     if (!name) return;
-    const goalRaw = goalInput.value.trim();
-    const goal = goalRaw ? parseInt(goalRaw, 10) : numDays();
-    const next = [...(state.habits || []), { id: uid(), name, goal: goal || numDays(), completions: {} }];
+    const next = [...(state.habits || []), { id: uid(), name, created: todayKey(), completions: {} }];
     nameInput.value = "";
-    goalInput.value = "";
     persistHabits(next);
   }
 
@@ -320,6 +312,7 @@
       const wIdx = weekdayIndex(jsDay);
       const k = dateKey(state.year, state.month, d);
       hs.forEach(h => {
+        if (h.created && k < h.created) return; // habit didn't exist yet on this day
         buckets[wIdx].total += 1;
         if (h.completions[k]) buckets[wIdx].done += 1;
       });
@@ -333,8 +326,10 @@
     const ad = activeDays();
     hs.forEach(h => {
       for (let d = 1; d <= ad; d++) {
+        const k = dateKey(state.year, state.month, d);
+        if (h.created && k < h.created) continue; // habit didn't exist yet on this day
         total += 1;
-        if (h.completions[dateKey(state.year, state.month, d)]) completed += 1;
+        if (h.completions[k]) completed += 1;
       }
     });
     const pct = total ? Math.round((completed / total) * 100) : 0;
@@ -357,28 +352,55 @@
     return best;
   }
 
-  function topHabits() {
-    const hs = state.habits || [];
-    const ad = activeDays();
-    return hs
-      .map(h => {
-        let done = 0;
-        for (let d = 1; d <= ad; d++) if (h.completions[dateKey(state.year, state.month, d)]) done += 1;
-        const pct = ad ? Math.round((done / ad) * 100) : 0;
-        return { name: h.name, pct, done };
-      })
-      .sort((a, b) => b.pct - a.pct)
-      .slice(0, 5);
-  }
-
   function streakFor(h) {
+    // Current streak = consecutive completed days counting back from the
+    // most recently completed day (not forced to end exactly on today).
+    // This way marking older days out of order gives a sensible answer.
+    const limit = isCurrentMonth() ? today.getDate() : numDays();
+    let lastDone = -1;
+    for (let d = limit; d >= 1; d--) {
+      if (h.completions[dateKey(state.year, state.month, d)]) { lastDone = d; break; }
+    }
+    if (lastDone === -1) return 0;
     let cur = 0;
-    for (let d = (isCurrentMonth() ? today.getDate() : numDays()); d >= 1; d--) {
-      const k = dateKey(state.year, state.month, d);
-      if (h.completions[k]) cur += 1;
+    for (let d = lastDone; d >= 1; d--) {
+      if (h.completions[dateKey(state.year, state.month, d)]) cur += 1;
       else break;
     }
     return cur;
+  }
+
+  // ---------- priority list (manual, user-curated — not auto-ranked) ----------
+  async function loadPriorityList() {
+    try {
+      const p = await storage.get("priorityList");
+      state.priorityList = p ? JSON.parse(p.value) : [];
+    } catch (e) {
+      state.priorityList = [];
+    }
+  }
+
+  async function persistPriorityList(next) {
+    state.priorityList = next;
+    render();
+    try {
+      await storage.set("priorityList", JSON.stringify(next));
+    } catch (e) {
+      console.error("save priority list failed", e);
+    }
+  }
+
+  function addPriorityItem() {
+    const input = document.getElementById("newPriorityItem");
+    const text = input.value.trim();
+    if (!text) return;
+    const next = [...(state.priorityList || []), { id: uid(), text }];
+    input.value = "";
+    persistPriorityList(next);
+  }
+
+  function removePriorityItem(id) {
+    persistPriorityList((state.priorityList || []).filter(p => p.id !== id));
   }
 
   // ---------- rendering ----------
@@ -414,7 +436,7 @@
     const wStats = weekdayStats();
     const oStats = overallStats();
     const best = bestStreak();
-    const top = topHabits();
+    const priorityList = state.priorityList || [];
     const days = dayList();
     const habits = state.habits || [];
     const tKey = todayKey();
@@ -526,29 +548,31 @@
         ${habitsBodyHtml}
         <div class="add-row">
           <input class="input" id="newHabitName" placeholder="New habit, e.g. Read 10 pages" />
-          <input class="goal-input" id="newHabitGoal" placeholder="Goal" />
           <button class="add-btn" onclick="App.addHabit()">Add</button>
         </div>
       </div>`;
 
-    // top habits
+    // priority list — a manual, user-curated list (not auto-ranked)
     let topBodyHtml;
-    if (top.length === 0) {
-      topBodyHtml = `<div class="empty-state">Add habits to see rankings.</div>`;
+    if (priorityList.length === 0) {
+      topBodyHtml = `<div class="empty-state">Nothing on your list yet — add what matters most below.</div>`;
     } else {
-      topBodyHtml = `<div class="top-list">${top.map((t, i) => `
+      topBodyHtml = `<div class="top-list">${priorityList.map((p, i) => `
         <div class="top-row">
           <span class="top-rank">${i + 1}</span>
-          <span class="top-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
-          <div class="top-bar-track"><div class="top-bar-fill" style="width:${t.pct}%"></div></div>
-          <span class="top-pct">${t.pct}%</span>
+          <span class="top-name" title="${escapeHtml(p.text)}" style="width: auto; flex: 1;">${escapeHtml(p.text)}</span>
+          <button class="remove-btn" onclick="App.removePriorityItem('${p.id}')" aria-label="Remove item">×</button>
         </div>`).join("")}</div>`;
     }
 
     const topHtml = `
       <div class="card" style="grid-area: top;">
-        <div class="card-label">TOP HABITS</div>
+        <div class="card-label">PRIORITY LIST</div>
         ${topBodyHtml}
+        <div class="add-row" style="margin-top: 10px;">
+          <input class="input" id="newPriorityItem" placeholder="e.g. Nail the Wed workout" />
+          <button class="add-btn" onclick="App.addPriorityItem()">Add</button>
+        </div>
       </div>`;
 
     // notes
@@ -581,18 +605,13 @@
       </div>`;
 
     // wire up inputs that shouldn't trigger a full re-render on every keystroke
-    const goalInput = document.getElementById("newHabitGoal");
-    if (goalInput) {
-      goalInput.addEventListener("input", e => {
-        e.target.value = e.target.value.replace(/[^0-9]/g, "");
-      });
-    }
     const nameInput = document.getElementById("newHabitName");
     if (nameInput) {
       nameInput.addEventListener("keydown", e => { if (e.key === "Enter") App.addHabit(); });
     }
-    if (goalInput) {
-      goalInput.addEventListener("keydown", e => { if (e.key === "Enter") App.addHabit(); });
+    const priorityInput = document.getElementById("newPriorityItem");
+    if (priorityInput) {
+      priorityInput.addEventListener("keydown", e => { if (e.key === "Enter") App.addPriorityItem(); });
     }
     const noteArea = document.getElementById("noteArea");
     if (noteArea) {
@@ -612,6 +631,8 @@
     removeHabit,
     toggleDay,
     shiftNoteDay,
+    addPriorityItem,
+    removePriorityItem,
   };
 
   loadMonth();

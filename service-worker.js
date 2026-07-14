@@ -1,4 +1,4 @@
-const CACHE_NAME = "streakline-v1";
+const CACHE_NAME = "streakline-v2";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
